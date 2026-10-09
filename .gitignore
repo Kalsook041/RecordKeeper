@@ -1,0 +1,22 @@
+# Local working state and runtime data
+/WORK_STATE.md
+keeper.log
+status.json
+diagnostics.json
+.codegraph/
+
+# Build and Python caches; keep the ready-to-run app for downloads
+/dist/*
+!/dist/ReplayKeeper.exe
+__pycache__/
+*.py[cod]
+*.tmp
+*.bak
+
+# Reproducible previews, raw soundtrack and encoding diagnostics
+/assets/exe-icon-check.png
+/promo/preview-*.jpg
+/promo/contact-sheet.jpg
+/promo/soundtrack.wav
+/promo/encode.log
+/promo/narration/*.jsonl

@@ -1,0 +1,12 @@
+* text=auto
+*.cs text eol=crlf
+*.ps1 text eol=crlf
+*.md text eol=lf
+*.py text eol=lf
+*.srt text eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
+*.mp4 binary
+*.mp3 binary
+*.exe binary
