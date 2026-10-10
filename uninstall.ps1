@@ -9,6 +9,7 @@ $installDirectory = [System.IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA '
 $installedExe = Join-Path $installDirectory 'ReplayKeeper.exe'
 $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 $expectedRunValue = '"' + $installedExe + '"'
+$startupShortcut = Join-Path ([Environment]::GetFolderPath('Startup')) 'ReplayKeeper.lnk'
 $currentSessionId = (Get-Process -Id $PID).SessionId
 
 function Assert-OrdinaryPath([string] $path) {
@@ -63,6 +64,7 @@ function Get-StartupCommand {
 
 Assert-OrdinaryPath $installDirectory
 Assert-OrdinaryPath $installedExe
+Assert-OrdinaryPath $startupShortcut
 if ((Test-Path -LiteralPath $installDirectory) -and -not (Test-Path -LiteralPath $installDirectory -PathType Container)) {
     throw "安装路径不是文件夹：$installDirectory"
 }
@@ -86,12 +88,29 @@ if ($null -ne $currentRunValue -and
     -not [string]::Equals($currentRunValue, $expectedRunValue, [System.StringComparison]::OrdinalIgnoreCase)) {
     Write-Warning "保留了指向其他路径的 ReplayKeeper 自启动项：$currentRunValue"
 }
-elseif ($hasInstalledExe) {
+if ($hasInstalledExe) {
     Invoke-ControlCommand $installedExe '--disable-startup'
 }
-elseif ($null -ne $currentRunValue) {
+elseif ($null -ne $currentRunValue -and $currentRunValue -eq $expectedRunValue) {
     # The binary is already absent. Remove only this product's exact Run value.
     Remove-ItemProperty -LiteralPath $runKey -Name 'ReplayKeeper'
+}
+
+# Also clean up the exact installed target if its binary has already been removed.
+if (Test-Path -LiteralPath $startupShortcut -PathType Leaf) {
+    $startupShell = New-Object -ComObject WScript.Shell
+    $link = $null
+    try {
+        $link = $startupShell.CreateShortcut($startupShortcut)
+        if ($link.TargetPath -eq $installedExe -and $link.Arguments -eq '') {
+            Remove-Item -LiteralPath $startupShortcut -Force
+        }
+        else { Write-Warning '保留了指向其他程序的 ReplayKeeper.lnk。' }
+    }
+    finally {
+        if ($null -ne $link) { [Runtime.InteropServices.Marshal]::FinalReleaseComObject($link) | Out-Null }
+        [Runtime.InteropServices.Marshal]::FinalReleaseComObject($startupShell) | Out-Null
+    }
 }
 
 if ($null -ne $currentRunValue -and

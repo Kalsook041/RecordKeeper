@@ -21,7 +21,7 @@ $installDirectory = [System.IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA '
 $installedExe = Join-Path $installDirectory 'ReplayKeeper.exe'
 $runSubKey = 'Software\Microsoft\Windows\CurrentVersion\Run'
 $statusFile = Join-Path $installDirectory 'status.json'
-$expectedRunValue = '"' + $installedExe + '"'
+$startupShortcut = Join-Path ([Environment]::GetFolderPath('Startup')) 'ReplayKeeper.lnk'
 $currentSessionId = (Get-Process -Id $PID).SessionId
 
 function Assert-OrdinaryPath([string] $path) {
@@ -140,6 +140,7 @@ function Wait-ForNewStatus([datetime] $launchedAtUtc) {
 
 Assert-OrdinaryPath $installDirectory
 Assert-OrdinaryPath $installedExe
+Assert-OrdinaryPath $startupShortcut
 if (Test-Path -LiteralPath $installDirectory) {
     if (-not (Test-Path -LiteralPath $installDirectory -PathType Container)) {
         throw "安装路径不是文件夹：$installDirectory"
@@ -153,6 +154,7 @@ Assert-NoOtherSessions
 $hadOldExe = Test-Path -LiteralPath $installedExe -PathType Leaf
 $wasRunning = @(Get-CurrentInstalledProcesses).Count -gt 0
 $oldRun = Get-RunSnapshot
+$oldShortcut = if (Test-Path -LiteralPath $startupShortcut -PathType Leaf) { [IO.File]::ReadAllBytes($startupShortcut) } else { $null }
 $backupFile = $null
 if ($hadOldExe) {
     $backupFile = Join-Path $installDirectory ("ReplayKeeper.rollback-{0}.exe" -f [guid]::NewGuid().ToString('N'))
@@ -172,10 +174,16 @@ try {
     Copy-Item -LiteralPath $builtExe -Destination $installedExe -Force
     Invoke-ControlCommand $installedExe '--enable-startup'
 
-    $newRun = Get-RunSnapshot
-    if (-not $newRun.Exists -or $newRun.Kind -ne [Microsoft.Win32.RegistryValueKind]::String -or
-        -not [string]::Equals([string]$newRun.Value, $expectedRunValue, [System.StringComparison]::OrdinalIgnoreCase)) {
-        throw "开机自启动验证失败；期望：$expectedRunValue；实际：$($newRun.Value)"
+    $startupShell = New-Object -ComObject WScript.Shell
+    $link = $null
+    try {
+        if (-not (Test-Path -LiteralPath $startupShortcut -PathType Leaf)) { throw '启动快捷方式未生成。' }
+        $link = $startupShell.CreateShortcut($startupShortcut)
+        if ($link.TargetPath -ne $installedExe -or $link.Arguments -ne '') { throw '启动快捷方式目标验证失败。' }
+    }
+    finally {
+        if ($null -ne $link) { [Runtime.InteropServices.Marshal]::FinalReleaseComObject($link) | Out-Null }
+        [Runtime.InteropServices.Marshal]::FinalReleaseComObject($startupShell) | Out-Null
     }
 
     $launchedAtUtc = [datetime]::UtcNow
@@ -221,7 +229,15 @@ catch {
         Restore-RunSnapshot $oldRun
     }
     catch {
-        $rollbackErrors.Add("恢复原自启动项失败：$($_.Exception.Message)")
+        $rollbackErrors.Add("恢复原注册表自启动项失败：$($_.Exception.Message)")
+    }
+    try {
+        Assert-OrdinaryPath $startupShortcut
+        if ($null -ne $oldShortcut) { [IO.File]::WriteAllBytes($startupShortcut, [byte[]]$oldShortcut) }
+        elseif (Test-Path -LiteralPath $startupShortcut -PathType Leaf) { Remove-Item -LiteralPath $startupShortcut -Force }
+    }
+    catch {
+        $rollbackErrors.Add("恢复原启动快捷方式失败：$($_.Exception.Message)")
     }
 
     if ($wasRunning -and $canRestoreFile) {
@@ -259,3 +275,4 @@ if ($null -ne $backupFile) {
 }
 Write-Host "安装完成：$installedExe"
 Write-Host '已为当前用户启用登录后自启动。'
+Write-Host "启动快捷方式：$startupShortcut"

@@ -21,7 +21,7 @@ Tick 使用 Stopwatch.ElapsedMilliseconds。默认3秒检测，启动20秒宽限
 - 小型中文状态窗口，关闭隐藏，显示开启/关闭/未知、暂停、恢复次数、上次检查、自启动、状态原因和快捷键。
 - Program 参数：--diagnose（Read，只写 diagnostics.json，不开启托盘）、--enable-startup、--disable-startup、--exit。
 - 当前用户单实例 Mutex，以及命名 ManualResetEvent 供 --exit 通知运行程序。重复启动不出现窗口。命名含当前用户SID，Local作用域。
-- Startup: public static bool IsEnabled(); public static void SetEnabled(bool value); HKCU Software/Microsoft/Windows/CurrentVersion/Run ReplayKeeper = 双引号包围当前exe绝对路径；用户手动打开exe也只启动，不默默开启自启动。安装脚本负责默认启用。
+- Startup: public static bool IsEnabled(); public static void SetEnabled(bool value); 当前用户 Startup 文件夹内的 ReplayKeeper.lnk 指向当前 exe，通过 WScript.Shell 创建与读回，先写临时链接再替换；只移除目标匹配的链接和旧版 HKCU Run 值。用户手动打开 exe 只启动，不默默开启自启动。安装脚本负责默认启用，失败回滚恢复旧链接的字节与原 Run 值。
 - 所有 UI 更新与 Timer 在同一 UI 线程。SystemEvents SessionSwitch/PowerModeChanged 只标记，通过下一 tick Reset 给恢复宽限；锁定时暂停恢复但保留用户暂停意愿。
 - 不退出 NVIDIA、不改变录制设置、不修改全局快捷键。
 

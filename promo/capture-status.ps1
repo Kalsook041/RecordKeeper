@@ -4,7 +4,7 @@ Add-Type -AssemblyName System.Drawing
 [Windows.Forms.Application]::EnableVisualStyles()
 $exe = Join-Path $env:LOCALAPPDATA 'ReplayKeeper\ReplayKeeper.exe'
 $assembly = [Reflection.Assembly]::LoadFile($exe)
-$data = Get-Content -LiteralPath (Join-Path $env:LOCALAPPDATA 'ReplayKeeper\status.json') -Raw | ConvertFrom-Json
+$data = Get-Content -LiteralPath (Join-Path $env:LOCALAPPDATA 'ReplayKeeper\status.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $snapshot = $assembly.CreateInstance('ReplayKeeper.ReplaySnapshot')
 $snapshot.State = [Enum]::ToObject($assembly.GetType('ReplayKeeper.ReplayState'), [int]$data.Snapshot.State)
 $snapshot.OverlayReady = $data.Snapshot.OverlayReady
@@ -13,8 +13,20 @@ $snapshot.HotkeyDisplay = $data.Snapshot.HotkeyDisplay
 $report = $assembly.CreateInstance('ReplayKeeper.MonitorReport')
 foreach ($name in @('Message', 'RecoveryCount', 'AttemptCount', 'Paused', 'Phase')) { $report.$name = $data.$name }
 $report.Snapshot = $snapshot
-$run = (Get-ItemProperty -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name ReplayKeeper).ReplayKeeper
-$startup = if ($run -eq ('"' + $exe + '"')) { '已启用' } else { '未启用' }
+$startup = '未启用'
+$shortcutPath = Join-Path ([Environment]::GetFolderPath('Startup')) 'ReplayKeeper.lnk'
+if (Test-Path -LiteralPath $shortcutPath -PathType Leaf) {
+    $shell = New-Object -ComObject WScript.Shell
+    $link = $null
+    try {
+        $link = $shell.CreateShortcut($shortcutPath)
+        if ($link.TargetPath -eq $exe -and $link.Arguments -eq '') { $startup = '已启用' }
+    }
+    finally {
+        if ($null -ne $link) { [Runtime.InteropServices.Marshal]::FinalReleaseComObject($link) | Out-Null }
+        [Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell) | Out-Null
+    }
+}
 $type = $assembly.GetType('ReplayKeeper.TrayApplication').GetNestedType('StatusWindow', [Reflection.BindingFlags]::NonPublic)
 $window = [Activator]::CreateInstance($type, $true)
 try {
