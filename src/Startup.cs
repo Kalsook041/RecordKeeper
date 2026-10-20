@@ -56,8 +56,8 @@ namespace ReplayKeeper
             // Migrate the old Run entry, without removing another installation's entry.
             using (RegistryKey key = Registry.CurrentUser.OpenSubKey(RunKey, true))
             {
-                if (key != null && String.Equals(key.GetValue(ValueName) as string,
-                    QuotedExecutablePath(), StringComparison.OrdinalIgnoreCase))
+                string legacy = key == null ? null : key.GetValue(ValueName) as string;
+                if (legacy != null && InstallationPaths.SameFile(legacy.Trim('"'), Path.GetFullPath(Application.ExecutablePath)))
                     key.DeleteValue(ValueName, false);
             }
         }
@@ -72,7 +72,7 @@ namespace ReplayKeeper
             {
                 string target = (string)shortcut.GetType().InvokeMember("TargetPath", BindingFlags.GetProperty, null, shortcut, null);
                 string arguments = (string)shortcut.GetType().InvokeMember("Arguments", BindingFlags.GetProperty, null, shortcut, null);
-                matches = String.Equals(target, Path.GetFullPath(Application.ExecutablePath), StringComparison.OrdinalIgnoreCase)
+                matches = InstallationPaths.SameFile(target, Path.GetFullPath(Application.ExecutablePath))
                     && String.IsNullOrEmpty(arguments);
             });
             return matches;

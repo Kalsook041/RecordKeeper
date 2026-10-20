@@ -15,6 +15,10 @@ namespace ReplayKeeper
 
 Tick 使用 Stopwatch.ElapsedMilliseconds。默认3秒检测，启动20秒宽限、叠加层变化后10秒就绪等待、连续两次关闭才操作、尝试后9秒确认，失败按30/60/120/300秒间隔重试。未知状态和缺失快捷键不操作，发送前即时复读状态。
 
+2026-10-20：Tick 必须显式传入 gameRunning。无游戏时在平台读取前返回 waiting-game，并清除待恢复状态；重新进入游戏重新宽限。GameActivityDetector 根据当前会话进程完整路径匹配 Windows GameConfigStore 和 games.txt（支持 ! 排除），目录/配置约15秒刷新，配置异常时停止检测。NvidiaPlatform 在 SendInput 前调用游戏复查委托，取消游戏已退出时的恢复。托盘提供添加/编辑游戏列表，非游戏状态不显示旧回放读数。
+
+InstallationPaths 为运行中的进程、快捷方式与安装脚本提供统一的物理文件路径比较，兼容 Windows 包装应用对 LocalAppData 的路径虚拟化；安装与卸载脚本通过 tools/installation-paths.ps1 复用该源码。
+
 ## UI 与生命周期（UI代理负责 src/Program.cs、src/TrayApplication.cs、src/Startup.cs）
 - [STAThread] main，无窗口启动，ApplicationContext 托盘，status.json 输出 MonitorReport（匿名对象或字典均可）。
 - 菜单：实时状态（disabled）、暂停/恢复守护、开机自启动勾选项、查看状态窗口、打开日志文件夹、退出。

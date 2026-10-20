@@ -1,5 +1,6 @@
 ﻿$ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 2.0
+. (Join-Path $PSScriptRoot 'tools\installation-paths.ps1')
 
 $projectDirectory = [System.IO.Path]::GetFullPath($PSScriptRoot)
 $buildScript = Join-Path $projectDirectory 'build.ps1'
@@ -35,7 +36,7 @@ function Assert-OrdinaryPath([string] $path) {
 
 function Get-InstalledProcesses([string] $executable) {
     @(Get-CimInstance -ClassName Win32_Process -Filter "Name = 'ReplayKeeper.exe'" |
-        Where-Object { [string]::Equals($_.ExecutablePath, $executable, [System.StringComparison]::OrdinalIgnoreCase) })
+        Where-Object { Test-ReplayKeeperSameFile $_.ExecutablePath $executable })
 }
 
 function Get-CurrentInstalledProcesses {
@@ -179,7 +180,7 @@ try {
     try {
         if (-not (Test-Path -LiteralPath $startupShortcut -PathType Leaf)) { throw '启动快捷方式未生成。' }
         $link = $startupShell.CreateShortcut($startupShortcut)
-        if ($link.TargetPath -ne $installedExe -or $link.Arguments -ne '') { throw '启动快捷方式目标验证失败。' }
+        if (-not (Test-ReplayKeeperSameFile $link.TargetPath $installedExe) -or $link.Arguments -ne '') { throw '启动快捷方式目标验证失败。' }
     }
     finally {
         if ($null -ne $link) { [Runtime.InteropServices.Marshal]::FinalReleaseComObject($link) | Out-Null }

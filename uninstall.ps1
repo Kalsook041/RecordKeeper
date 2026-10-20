@@ -1,5 +1,6 @@
 ﻿$ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 2.0
+. (Join-Path $PSScriptRoot 'tools\installation-paths.ps1')
 
 if ([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
     throw 'LOCALAPPDATA 未设置，无法确定当前用户的安装目录。'
@@ -23,7 +24,7 @@ function Assert-OrdinaryPath([string] $path) {
 
 function Get-InstalledProcesses([string] $executable) {
     @(Get-CimInstance -ClassName Win32_Process -Filter "Name = 'ReplayKeeper.exe'" |
-        Where-Object { [string]::Equals($_.ExecutablePath, $executable, [System.StringComparison]::OrdinalIgnoreCase) })
+        Where-Object { Test-ReplayKeeperSameFile $_.ExecutablePath $executable })
 }
 
 function Get-CurrentInstalledProcesses {
@@ -102,7 +103,7 @@ if (Test-Path -LiteralPath $startupShortcut -PathType Leaf) {
     $link = $null
     try {
         $link = $startupShell.CreateShortcut($startupShortcut)
-        if ($link.TargetPath -eq $installedExe -and $link.Arguments -eq '') {
+        if ((Test-ReplayKeeperSameFile $link.TargetPath $installedExe) -and $link.Arguments -eq '') {
             Remove-Item -LiteralPath $startupShortcut -Force
         }
         else { Write-Warning '保留了指向其他程序的 ReplayKeeper.lnk。' }

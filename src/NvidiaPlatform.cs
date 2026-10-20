@@ -16,6 +16,7 @@ namespace ReplayKeeper
         public const string ReplayValue = "{1B1D3DAA-601D-49E5-8508-81736CA28C6D}";
         private readonly string registryPath;
         private readonly Func<string> findOverlay;
+        public Func<bool> CanEnable = delegate { return true; };
 
         public NvidiaPlatform() : this(RegistryPath, FindOverlay) { }
 
@@ -116,6 +117,11 @@ namespace ReplayKeeper
                 {
                     input[i] = KeyInput(hotkey[i], false);
                     input[hotkey.Length + i] = KeyInput(hotkey[hotkey.Length - 1 - i], true);
+                }
+                if (!CanEnable())
+                {
+                    detail = "游戏已退出或无法确认游戏运行，取消恢复";
+                    return EnableResult.Deferred;
                 }
                 uint sent = SendInput((uint)input.Length, input, Marshal.SizeOf(typeof(INPUT)));
                 if (sent != input.Length)

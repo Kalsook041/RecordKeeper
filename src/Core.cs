@@ -48,6 +48,7 @@ namespace ReplayKeeper
         private int recoveries;
         private int attempts;
         private string lastTransition;
+        private bool gameWasRunning = true;
 
         public ReplayMonitor(IReplayPlatform platform, Action<string> log)
         {
@@ -67,8 +68,17 @@ namespace ReplayKeeper
             failures = 0;
         }
 
-        public MonitorReport Tick(long nowMilliseconds, bool paused)
+        public MonitorReport Tick(long nowMilliseconds, bool paused, bool gameRunning)
         {
+            if (!gameRunning)
+            {
+                Reset(nowMilliseconds);
+                gameWasRunning = false;
+                return Report(new ReplaySnapshot { Detail = "非游戏期间不检测即时回放，也不执行恢复" },
+                    paused, paused ? "paused" : "waiting-game", paused ? "守护已暂停，不执行恢复" : "等待游戏启动，检测未启用");
+            }
+            if (!gameWasRunning) Reset(nowMilliseconds);
+            gameWasRunning = true;
             if (!initialized) Reset(nowMilliseconds);
             ReplaySnapshot snapshot;
             try { snapshot = platform.Read(); }

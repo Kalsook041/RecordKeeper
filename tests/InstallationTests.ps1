@@ -2,8 +2,13 @@
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 2.0
 $projectRoot = Split-Path $PSScriptRoot -Parent
+. (Join-Path $projectRoot 'tools\installation-paths.ps1')
 $appDirectory = Join-Path $env:LOCALAPPDATA 'ReplayKeeper'
 $exe = Join-Path $appDirectory 'ReplayKeeper.exe'
+if (Test-Path -LiteralPath $exe -PathType Leaf) {
+    $exe = [ReplayKeeper.InstallationPaths]::Resolve($exe)
+    $appDirectory = Split-Path $exe -Parent
+}
 $status = Join-Path $appDirectory 'status.json'
 $sessionId = (Get-Process -Id $PID).SessionId
 $backupStatus = Join-Path $appDirectory ('status.test-backup-' + [guid]::NewGuid().ToString('N') + '.json')
@@ -12,7 +17,7 @@ $startupShortcut = Join-Path ([Environment]::GetFolderPath('Startup')) 'ReplayKe
 
 function Running {
     @(Get-CimInstance Win32_Process -Filter "Name = 'ReplayKeeper.exe'" |
-        Where-Object { $_.ExecutablePath -eq $exe -and $_.SessionId -eq $sessionId })
+        Where-Object { (Test-ReplayKeeperSameFile $_.ExecutablePath $exe) -and $_.SessionId -eq $sessionId })
 }
 function Stop-Guard {
     if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { return }

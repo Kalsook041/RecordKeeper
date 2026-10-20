@@ -13,6 +13,8 @@ namespace ReplayKeeper
         private readonly EventWaitHandle exitEvent;
         private readonly Stopwatch clock;
         private readonly ReplayMonitor monitor;
+        private readonly GameActivityDetector games;
+        private GameActivity gameActivity = new GameActivity();
         private readonly System.Windows.Forms.Timer timer;
         private readonly NotifyIcon trayIcon;
         private readonly Icon applicationIcon;
@@ -35,7 +37,10 @@ namespace ReplayKeeper
             if (exitEvent == null) throw new ArgumentNullException("exitEvent");
             this.exitEvent = exitEvent;
             clock = Stopwatch.StartNew();
-            monitor = new ReplayMonitor(new NvidiaPlatform(), Log);
+            games = new GameActivityDetector();
+            NvidiaPlatform platform = new NvidiaPlatform();
+            platform.CanEnable = delegate { return games.Read().Running; };
+            monitor = new ReplayMonitor(platform, Log);
 
             menu = new ContextMenuStrip();
             stateItem = new ToolStripMenuItem("实时状态：检查中") { Enabled = false };
@@ -44,6 +49,10 @@ namespace ReplayKeeper
             ToolStripMenuItem showItem = new ToolStripMenuItem("查看状态窗口");
             ToolStripMenuItem logsItem = new ToolStripMenuItem("打开日志文件夹");
             ToolStripMenuItem exitItem = new ToolStripMenuItem("退出");
+            ToolStripMenuItem addGameItem = new ToolStripMenuItem("添加游戏…");
+            ToolStripMenuItem gameListItem = new ToolStripMenuItem("编辑游戏识别列表");
+            addGameItem.Click += delegate { ConfigureGames(true); };
+            gameListItem.Click += delegate { ConfigureGames(false); };
             pauseItem.Click += delegate { TogglePause(); };
             startupItem.Click += delegate { ToggleStartup(); };
             showItem.Click += delegate { ShowStatus(); };
@@ -53,6 +62,8 @@ namespace ReplayKeeper
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(pauseItem);
             menu.Items.Add(startupItem);
+            menu.Items.Add(addGameItem);
+            menu.Items.Add(gameListItem);
             menu.Items.Add(showItem);
             menu.Items.Add(logsItem);
             menu.Items.Add(new ToolStripSeparator());
@@ -101,7 +112,10 @@ namespace ReplayKeeper
                 bool paused = userPaused ||
                     Interlocked.CompareExchange(ref sessionLocked, 0, 0) != 0 ||
                     Interlocked.CompareExchange(ref powerSuspended, 0, 0) != 0;
-                lastReport = monitor.Tick(now, paused);
+                gameActivity = paused ? new GameActivity { Detail = "守护已暂停" } : games.Read();
+                lastReport = monitor.Tick(now, paused, gameActivity.Running);
+                if (!paused && !gameActivity.Running) lastReport.Message = gameActivity.Detail + "；检测未启用";
+                else if (gameActivity.Running) lastReport.Message = gameActivity.Detail + "；" + lastReport.Message;
                 lastCheck = DateTime.Now;
                 lastError = null;
             }
@@ -134,6 +148,9 @@ namespace ReplayKeeper
                     AttemptCount = lastReport.AttemptCount,
                     Paused = lastReport.Paused,
                     Phase = lastReport.Phase,
+                    GameRunning = gameActivity.Running,
+                    GameName = gameActivity.Name,
+                    GameDetectionDetail = gameActivity.Detail,
                     LastCheck = lastCheck.ToString("o"),
                     LogError = AppFiles.LastLogError
                 });
@@ -150,7 +167,9 @@ namespace ReplayKeeper
             string state = StateText(snapshot);
             stateItem.Text = "实时状态：" + state;
             pauseItem.Text = userPaused ? "恢复守护" : "暂停守护";
-            trayIcon.Text = "ReplayKeeper：" + (lastReport != null && lastReport.Paused ? "守护暂停" : "守护中") + "，回放" + state;
+            trayIcon.Text = lastReport != null && lastReport.Phase == "waiting-game" ? "ReplayKeeper：等待游戏，检测未启用" :
+                "ReplayKeeper：" + (lastReport != null && lastReport.Paused ? "守护暂停" : "守护中") + "，回放" + state;
+            if (lastReport != null && lastReport.Phase == "waiting-game") stateItem.Text = "等待游戏：检测未启用";
             if (statusWindow != null && !statusWindow.IsDisposed)
                 statusWindow.UpdateStatus(lastReport, lastCheck, userPaused,
                     Interlocked.CompareExchange(ref sessionLocked, 0, 0) != 0,
@@ -165,6 +184,38 @@ namespace ReplayKeeper
                 monitor.Reset(clock.ElapsedMilliseconds);
             Log(userPaused ? "用户暂停守护" : "用户恢复守护");
             Tick();
+        }
+
+        private void ConfigureGames(bool add)
+        {
+            try
+            {
+                Directory.CreateDirectory(AppFiles.DataDirectory);
+                string path = GameActivityDetector.ConfigurationPath;
+                if (!File.Exists(path)) File.WriteAllText(path,
+                    "# 每行填写一个游戏主程序的完整 .exe 路径；不要填写启动器。\r\n" +
+                    "# 在路径前加 ! 可排除被误识别的程序。保存后约 15 秒生效。\r\n", new System.Text.UTF8Encoding(true));
+                if (add)
+                {
+                    using (OpenFileDialog dialog = new OpenFileDialog())
+                    {
+                        dialog.Title = "选择游戏主程序（不是启动器）";
+                        dialog.Filter = "游戏程序 (*.exe)|*.exe";
+                        dialog.CheckFileExists = true;
+                        if (dialog.ShowDialog() != DialogResult.OK) return;
+                        File.AppendAllText(path, Environment.NewLine + Path.GetFullPath(dialog.FileName) + Environment.NewLine,
+                            new System.Text.UTF8Encoding(true));
+                    }
+                    games.Refresh();
+                    Tick();
+                }
+                else Process.Start(new ProcessStartInfo("notepad.exe", "\"" + path + "\"") { UseShellExecute = true });
+            }
+            catch (Exception error)
+            {
+                Program.LogFailure("配置游戏识别失败", error);
+                MessageBox.Show("无法配置游戏识别：" + error.Message, "ReplayKeeper", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         private void ToggleStartup()
@@ -373,10 +424,10 @@ namespace ReplayKeeper
                 bool locked, bool suspended, string startup)
             {
                 ReplaySnapshot snapshot = report == null ? null : report.Snapshot;
-                stateValue.Text = StateText(snapshot);
+                stateValue.Text = report != null && report.Phase == "waiting-game" ? "未检测（非游戏期间）" : StateText(snapshot);
                 pauseValue.Text = userPaused ? "用户已暂停" : locked ? "会话已锁定" :
                     suspended ? "系统已挂起" : report != null && report.Phase == "error" ?
-                    "检查异常" : "运行中";
+                    "检查异常" : report != null && report.Phase == "waiting-game" ? "等待游戏启动" : "运行中";
                 recoveryValue.Text = report == null ? "0" : report.RecoveryCount.ToString();
                 checkValue.Text = checkedAt == DateTime.MinValue ? "尚未检查" :
                     checkedAt.ToString("yyyy-MM-dd HH:mm:ss");
